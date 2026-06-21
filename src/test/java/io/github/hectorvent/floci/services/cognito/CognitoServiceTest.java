@@ -10,6 +10,8 @@ import io.github.hectorvent.floci.services.cognito.model.UserPool;
 import io.github.hectorvent.floci.services.cognito.model.UserPoolClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -19,18 +21,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CognitoServiceTest {
 
     private CognitoService service;
     private InMemoryStorage<String, CognitoGroup> groupStore;
-    private RegionResolver regionResolver;
 
     @BeforeEach
     void setUp() {
         groupStore = new InMemoryStorage<>();
-        regionResolver = new RegionResolver("us-east-1", "000000000000");
+        RegionResolver regionResolver = new RegionResolver("us-east-1", "000000000000");
         service = new CognitoService(
                 new InMemoryStorage<>(),
                 new InMemoryStorage<>(),
@@ -1819,5 +1822,66 @@ class CognitoServiceTest {
 
         CognitoUser user = service.adminGetUser(pool.getId(), "carol");
         assertEquals("Carolyn", user.getAttributes().get("given_name"));
+    }
+
+    // =========================================================================
+    // Cognito ClientId And Secret overrides
+    // =========================================================================
+
+    @ParameterizedTest
+    @CsvSource( {
+            "use-name,basic-client",
+            "prepend-to-name:prepended-,prepended-basic-client",
+            "append-to-name:-appended,basic-client-appended",
+    })
+    void createUserPoolWithOverrideForClientIdAndClientSecret(String overrideClientId, String expectedClientId) {
+        UserPool pool = service.createUserPool(
+                Map.of(
+                        "PoolName", "ClientOverridesPool",
+                        "UserPoolTags", Map.of(
+                                "env", "test",
+                                ReservedTags.OVERRIDE_COGNITO_CLIENT_ID_KEY, overrideClientId,
+                                ReservedTags.OVERRIDE_COGNITO_CLIENT_SECRET_KEY, "secret")
+                ),
+                "us-east-1"
+        );
+
+        assertThat(pool.getUserPoolTags())
+                .containsEntry("env", "test")
+                .doesNotContainKey(ReservedTags.OVERRIDE_COGNITO_CLIENT_ID_KEY)
+                .doesNotContainKey(ReservedTags.OVERRIDE_COGNITO_CLIENT_SECRET_KEY);
+
+        UserPoolClient client = service.createUserPoolClient(
+                pool.getId(),
+                "basic-client",
+                true,
+                true,
+                List.of(),
+                List.of()
+        );
+
+        assertThat(client.getClientName()).isEqualTo("basic-client");
+        assertThat(client.getClientId()).isEqualTo(expectedClientId);
+        assertThat(client.getClientSecret()).isEqualTo("secret");
+    }
+
+    @ParameterizedTest
+    @CsvSource( {
+            "prepend-to-name: prepended- ,secret",
+            "append-to-name: -appended ,secret",
+            "append-to-name:-appended,"
+    })
+    void createUserPoolWithInvalidOverrideForClientIdAndClientSecret(String overrideClientId, String secret) {
+        Map<String, Object> createUserPool = new HashMap<>();
+        Map<String,String> userPoolTags = new HashMap<>();
+        userPoolTags.put(ReservedTags.OVERRIDE_COGNITO_CLIENT_ID_KEY, overrideClientId);
+        userPoolTags.put(ReservedTags.OVERRIDE_COGNITO_CLIENT_SECRET_KEY, secret);
+        createUserPool.put("PoolName", "InvalidOverridesPool");
+        createUserPool.put("UserPoolTags", userPoolTags);
+
+        assertThatThrownBy(() -> service.createUserPool(
+                createUserPool,
+                "us-east-1"
+        )).isInstanceOf(AwsException.class);
     }
 }

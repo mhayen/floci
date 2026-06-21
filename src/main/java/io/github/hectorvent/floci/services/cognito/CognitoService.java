@@ -39,7 +39,7 @@ public class CognitoService {
 
     /**
      * Claim overrides returned by a PreTokenGeneration Lambda trigger.
-     *
+     * <p>
      * Supports both V1 (single claims map applied to both id and access tokens)
      * and V2 (per-token-type claim overrides + scope changes for the access
      * token). For V1 lambdas the parser populates the id/access slots with the
@@ -131,7 +131,8 @@ public class CognitoService {
         pool.setId(id);
         pool.setName(name);
         pool.setArn(regionResolver.buildArn("cognito-idp", region, "userpool/" + id));
-
+        pool.setClientIdOverride(ReservedTags.extractOverrideCognitoClientId(userPoolTags));
+        pool.setClientSecretOverride(ReservedTags.extractOverrideCognitoClientSecret(userPoolTags));
         populateUserPool(pool, request);
 
         ensureJwtSigningKeys(pool);
@@ -315,16 +316,17 @@ public class CognitoService {
     }
 
     public UserPoolClient createUserPoolClient(String userPoolId, String clientName,
-            boolean generateSecret, boolean allowedOAuthFlowsUserPoolClient,
-            List<String> allowedOAuthFlows, List<String> allowedOAuthScopes,
-            Map<String, Object> analyticsConfiguration, List<String> callbackURLs,
-            String defaultRedirectURI, List<String> explicitAuthFlows, Integer accessTokenValidity,
-            Integer idTokenValidity, List<String> logoutURLs, String preventUserExistenceErrors,
-            List<String> readAttributes, Integer refreshTokenValidity,
-            List<String> supportedIdentityProviders, Map<String, String> tokenValidityUnits,
-            List<String> writeAttributes, Map<String, Object> refreshTokenRotation,
-            Boolean enableTokenRevocation) {
-        describeUserPool(userPoolId);
+                                               boolean generateSecret, boolean allowedOAuthFlowsUserPoolClient,
+                                               List<String> allowedOAuthFlows, List<String> allowedOAuthScopes,
+                                               Map<String, Object> analyticsConfiguration, List<String> callbackURLs,
+                                               String defaultRedirectURI, List<String> explicitAuthFlows, Integer accessTokenValidity,
+                                               Integer idTokenValidity, List<String> logoutURLs, String preventUserExistenceErrors,
+                                               List<String> readAttributes, Integer refreshTokenValidity,
+                                               List<String> supportedIdentityProviders, Map<String, String> tokenValidityUnits,
+                                               List<String> writeAttributes, Map<String, Object> refreshTokenRotation,
+                                               Boolean enableTokenRevocation) {
+
+        UserPool userPool = describeUserPool(userPoolId);
         String clientId = UUID.randomUUID().toString().replace("-", "").substring(0, 26);
         List<String> normalizedAllowedOAuthFlows = normalizeStringList(allowedOAuthFlows);
         List<String> normalizedAllowedOAuthScopes = normalizeStringList(allowedOAuthScopes);
@@ -352,6 +354,15 @@ public class CognitoService {
         );
 
         UserPoolClient client = new UserPoolClient();
+        if (userPool.getClientIdOverride() != null) {
+            if (userPool.getClientIdOverride().equalsIgnoreCase("use-name")) {
+                clientId = clientName;
+            } else if (userPool.getClientIdOverride().startsWith("append-to-name:")) {
+                clientId = clientName + userPool.getClientIdOverride().substring(15);
+            } else if (userPool.getClientIdOverride().startsWith("prepend-to-name:")) {
+                clientId = userPool.getClientIdOverride().substring(16) + clientName;
+            }
+        }
         client.setClientId(clientId);
         client.setUserPoolId(userPoolId);
         client.setClientName(clientName);
@@ -378,6 +389,12 @@ public class CognitoService {
         client.setEnableTokenRevocation(enableTokenRevocation != null ? enableTokenRevocation : Boolean.TRUE);
         if (generateSecret) {
             String clientSecret = generateSecretValue();
+            if (userPool.getClientSecretOverride() != null) {
+                clientSecret = userPool.getClientSecretOverride();
+                if (clientSecret.isEmpty()) {
+                    throw new AwsException("ValidationException", "Client secret override cannot be empty", 400);
+                }
+            }
             client.setClientSecret(clientSecret);
 
             long epochMillis = System.currentTimeMillis();
@@ -1295,25 +1312,7 @@ public class CognitoService {
         if (overrideId == null) {
             return region + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 9);
         }
-        validateOverridePoolId(overrideId);
-        return overrideId.trim();
-    }
-
-    private void validateOverridePoolId(String overrideId) {
-        if (overrideId == null || overrideId.trim().isEmpty()) {
-            throw new AwsException("ValidationException", "Override resource ID must not be blank.", 400);
-        }
-
-        String normalized = overrideId.trim();
-        if (normalized.chars().anyMatch(Character::isWhitespace)) {
-            throw new AwsException("ValidationException", "Override resource ID must not contain whitespace.", 400);
-        }
-        if (normalized.indexOf('/') >= 0 || normalized.indexOf('?') >= 0 || normalized.indexOf('#') >= 0) {
-            throw new AwsException("ValidationException", "Override resource ID contains unsupported characters.", 400);
-        }
-        if (normalized.chars().anyMatch(Character::isISOControl)) {
-            throw new AwsException("ValidationException", "Override resource ID must not contain control characters.", 400);
-        }
+        return overrideId;
     }
 
     public String getJwksUri(String poolId) {
