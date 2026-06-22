@@ -156,7 +156,7 @@ public class KmsService {
     }
 
     private String resolveKeyId(Map<String, String> tags) {
-        String overrideId = ReservedTags.extractOverrideId(tags);
+        String overrideId = ReservedTags.extractOverrideKeyId(tags);
         if (overrideId == null) {
             return UUID.randomUUID().toString();
         }

@@ -20,6 +20,7 @@ import io.github.hectorvent.floci.services.sns.SnsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
+import org.jspecify.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.security.*;
@@ -29,6 +30,8 @@ import java.security.spec.X509EncodedKeySpec;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.*;
+
+import static io.github.hectorvent.floci.core.common.ReservedTags.rejectUnknownReservedTags;
 
 @ApplicationScoped
 public class CognitoService {
@@ -123,6 +126,7 @@ public class CognitoService {
     public UserPool createUserPool(Map<String, Object> request, String region) {
         String name = (String) request.get("PoolName");
         Map<String, String> userPoolTags = (Map<String, String>) request.get("UserPoolTags");
+        rejectUnknownReservedTags(userPoolTags,"UserPoolTaggingException");
         String id = resolveUserPoolId(region, userPoolTags);
         if (poolStore.get(id).isPresent()) {
             throw new AwsException("ResourceConflictException", "User pool already exists", 400);
@@ -131,7 +135,7 @@ public class CognitoService {
         pool.setId(id);
         pool.setName(name);
         pool.setArn(regionResolver.buildArn("cognito-idp", region, "userpool/" + id));
-        pool.setClientIdOverride(ReservedTags.extractOverrideCognitoClientId(userPoolTags));
+        pool.setClientIdOverride(getClientIdOverride(userPoolTags));
         pool.setClientSecretOverride(ReservedTags.extractOverrideCognitoClientSecret(userPoolTags));
         populateUserPool(pool, request);
 
@@ -139,6 +143,15 @@ public class CognitoService {
         poolStore.put(id, pool);
         LOG.infov("Created User Pool: {0}", id);
         return pool;
+    }
+
+    private @Nullable String getClientIdOverride(Map<String, String> userPoolTags) {
+        String overrideMode = ReservedTags.extractOverrideCognitoClientId(userPoolTags);
+        if (overrideMode != null &&
+                (!overrideMode.equals("use-name") && !overrideMode.startsWith("append-to-name:") && !overrideMode.startsWith("prepend-to-name:"))) {
+                throw new AwsException("InvalidParameterException", "Invalid override mode for Cognito client ID. Only use-name, append-to-name: and prepend-to-name: are allowed", 400);
+        }
+        return overrideMode;
     }
 
     public UserPool updateUserPool(Map<String, Object> request, String region) {
@@ -392,7 +405,7 @@ public class CognitoService {
             if (userPool.getClientSecretOverride() != null) {
                 clientSecret = userPool.getClientSecretOverride();
                 if (clientSecret.isEmpty()) {
-                    throw new AwsException("ValidationException", "Client secret override cannot be empty", 400);
+                    throw new AwsException("InvalidParameterException", "Client secret override cannot be empty", 400);
                 }
             }
             client.setClientSecret(clientSecret);
@@ -1308,7 +1321,7 @@ public class CognitoService {
     }
 
     private String resolveUserPoolId(String region, Map<String, String> tags) {
-        String overrideId = ReservedTags.extractOverrideId(tags);
+        String overrideId = ReservedTags.extractOverrideUserPoolId(tags);
         if (overrideId == null) {
             return region + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 9);
         }

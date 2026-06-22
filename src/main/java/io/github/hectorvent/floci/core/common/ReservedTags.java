@@ -1,6 +1,7 @@
 package io.github.hectorvent.floci.core.common;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import org.apache.commons.lang3.function.TriConsumer;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -12,20 +13,27 @@ public final class ReservedTags {
     public static final String OVERRIDE_ID_KEY = RESERVED_PREFIX + "override-id";
     public static final String OVERRIDE_COGNITO_CLIENT_ID_KEY = RESERVED_PREFIX + "override-cognito-client-id";
     public static final String OVERRIDE_COGNITO_CLIENT_SECRET_KEY = RESERVED_PREFIX + "override-cognito-client-secret";
+    private static final String INVALID_PARAMETER_EXCEPTION = "InvalidParameterException";
+    private static final String VALIDATION_EXCEPTION = "ValidationException";
+    private static final String CONTROL_CHARACTER_ERROR_MESSAGE = "Override %s must not contain control characters.";
 
     private ReservedTags() {
     }
 
-    public static String extractOverrideId(Map<String, String> tags) {
-        return getOverride(tags, OVERRIDE_ID_KEY);
+    public static String extractOverrideKeyId(Map<String, String> tags) {
+        return getOverride(tags, OVERRIDE_ID_KEY, ReservedTags::validateOverrideId, "Resource ID", VALIDATION_EXCEPTION);
+    }
+
+    public static String extractOverrideUserPoolId(Map<String, String> tags) {
+        return getOverride(tags, OVERRIDE_ID_KEY, ReservedTags::validateOverrideId, "Resource ID", INVALID_PARAMETER_EXCEPTION);
     }
 
     public static String extractOverrideCognitoClientId(Map<String, String> tags) {
-        return getOverride(tags, OVERRIDE_COGNITO_CLIENT_ID_KEY);
+        return getOverride(tags, OVERRIDE_COGNITO_CLIENT_ID_KEY, ReservedTags::validateOverrideId, "Cognito Client ID", INVALID_PARAMETER_EXCEPTION);
     }
 
     public static String extractOverrideCognitoClientSecret(Map<String, String> tags) {
-        return getOverride(tags, OVERRIDE_COGNITO_CLIENT_SECRET_KEY);
+        return getOverride(tags, OVERRIDE_COGNITO_CLIENT_SECRET_KEY, ReservedTags::validateClientSecret, "Cognito Client Secret", INVALID_PARAMETER_EXCEPTION);
     }
 
     public static Map<String, String> stripReservedTags(Map<String, String> tags) {
@@ -48,7 +56,7 @@ public final class ReservedTags {
         for (String key : tags.keySet()) {
             if (isReserved(key)) {
                 throw new AwsException(
-                        "ValidationException",
+                        VALIDATION_EXCEPTION,
                         "Reserved tag keys with prefix " + RESERVED_PREFIX + " can only be supplied during resource creation.",
                         400
                 );
@@ -56,33 +64,59 @@ public final class ReservedTags {
         }
     }
 
-    private static String getOverride(Map<String, String> tags, String override){
+    public static void rejectUnknownReservedTags(Map<String, String> tags, String errorCode) {
+        if (tags == null) {
+            return;
+        }
+        for (String key : tags.keySet()) {
+            if (isReserved(key) && !key.equals(OVERRIDE_ID_KEY) && !key.equals(OVERRIDE_COGNITO_CLIENT_ID_KEY) && !key.equals(OVERRIDE_COGNITO_CLIENT_SECRET_KEY)) {
+                    throw new AwsException(
+                            errorCode,
+                            "%s is an unknown Reserved Tag.".formatted(key),
+                            400
+                    );
+                }
+        }
+    }
+
+    private static String getOverride(Map<String, String> tags, String override, TriConsumer<String, String, String> validator, String name, String errorCode) {
         if (tags == null) {
             return null;
         }
         if (tags.containsKey(override)) {
             String ov = tags.get(override);
-            validateOverridePoolId(ov);
+            validator.accept(ov,name, errorCode);
             return ov;
         }
         return null;
     }
 
-    private static void validateOverridePoolId(String overrideId) {
-        if (overrideId == null || overrideId.trim().isEmpty()) {
-            throw new AwsException("ValidationException", "Override resource ID must not be blank.", 400);
-        }
-
-        String normalized = overrideId.trim();
-        if (normalized.chars().anyMatch(Character::isWhitespace)) {
-            throw new AwsException("ValidationException", "Override resource ID must not contain whitespace.", 400);
-        }
+    private static void validateOverrideId(String overrideId, String name, String invalidParameterException) {
+        String normalized = checkNullAndWhitespace(overrideId, name, invalidParameterException);
         if (normalized.indexOf('/') >= 0 || normalized.indexOf('?') >= 0 || normalized.indexOf('#') >= 0) {
-            throw new AwsException("ValidationException", "Override resource ID contains unsupported characters.", 400);
+            throw new AwsException(invalidParameterException, "Override %s contains unsupported characters.".formatted(name), 400);
         }
         if (normalized.chars().anyMatch(Character::isISOControl)) {
-            throw new AwsException("ValidationException", "Override resource ID must not contain control characters.", 400);
+            throw new AwsException(invalidParameterException, CONTROL_CHARACTER_ERROR_MESSAGE.formatted(name), 400);
         }
+    }
+
+    private static void validateClientSecret(String overrideSecret, String name, String errorCode) {
+        String normalized = checkNullAndWhitespace(overrideSecret, name, errorCode);
+        if (normalized.chars().anyMatch(Character::isISOControl)) {
+            throw new AwsException(errorCode, CONTROL_CHARACTER_ERROR_MESSAGE.formatted(name), 400);
+        }
+    }
+
+    private static String checkNullAndWhitespace(String overrideSecret, String name, String errorCode) {
+        if (overrideSecret == null || overrideSecret.trim().isEmpty()) {
+            throw new AwsException(errorCode, "Override %s must not be blank.".formatted(name), 400);
+        }
+        String normalized = overrideSecret.trim();
+        if (normalized.chars().anyMatch(Character::isWhitespace)) {
+            throw new AwsException(errorCode, "Override %s must not contain whitespace.".formatted(name), 400);
+        }
+        return normalized;
     }
 
 

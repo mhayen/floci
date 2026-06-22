@@ -11,7 +11,7 @@ Floci serves pool-specific discovery and JWKS endpoints, plus a relaxed OAuth to
   * set to `use-name` to use the client name as client ID.
   * set to `append-to-name:-somestring` to append a string to the client name to be used as client ID.
   * set to `prepend-to-name:somestring-` to prepend a string to the client name to be used as client ID.
-* `floci:overide-client-secret`, to set the secret for all clients created in this userpool.  
+* `floci:override-cognito-client-secret`, to set the secret for all clients created in this userpool.  
 
 Floci strips reserved `floci:*` tags from stored and returned `UserPoolTags` on both create and update paths, so the tag namespace acts as an input-only control channel and is never persisted as user-visible metadata.
 

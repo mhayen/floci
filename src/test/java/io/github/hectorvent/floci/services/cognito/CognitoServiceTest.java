@@ -599,7 +599,7 @@ class CognitoServiceTest {
                 )
         );
 
-        assertEquals("ValidationException", exception.getErrorCode());
+        assertEquals("InvalidParameterException", exception.getErrorCode());
     }
 
     @Test
@@ -612,7 +612,7 @@ class CognitoServiceTest {
                 )
         );
 
-        assertEquals("ValidationException", exception.getErrorCode());
+        assertEquals("InvalidParameterException", exception.getErrorCode());
     }
 
     @Test
@@ -624,7 +624,7 @@ class CognitoServiceTest {
                         "us-east-1"
                 )
         );
-        assertEquals("ValidationException", questionMarkException.getErrorCode());
+        assertEquals("InvalidParameterException", questionMarkException.getErrorCode());
 
         AwsException hashException = assertThrows(
                 AwsException.class,
@@ -633,7 +633,7 @@ class CognitoServiceTest {
                         "us-east-1"
                 )
         );
-        assertEquals("ValidationException", hashException.getErrorCode());
+        assertEquals("InvalidParameterException", hashException.getErrorCode());
     }
 
     @Test
@@ -1869,7 +1869,8 @@ class CognitoServiceTest {
     @CsvSource( {
             "prepend-to-name: prepended- ,secret",
             "append-to-name: -appended ,secret",
-            "append-to-name:-appended,"
+            "append-to-name:-appended,",
+            "something-else,secret"
     })
     void createUserPoolWithInvalidOverrideForClientIdAndClientSecret(String overrideClientId, String secret) {
         Map<String, Object> createUserPool = new HashMap<>();
@@ -1882,6 +1883,8 @@ class CognitoServiceTest {
         assertThatThrownBy(() -> service.createUserPool(
                 createUserPool,
                 "us-east-1"
-        )).isInstanceOf(AwsException.class);
+        )).isInstanceOf(AwsException.class)
+                .extracting("errorCode")
+                .isEqualTo("InvalidParameterException");
     }
 }
