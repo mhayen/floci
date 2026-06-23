@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CognitoServiceTest {
@@ -1846,10 +1844,9 @@ class CognitoServiceTest {
                 "us-east-1"
         );
 
-        assertThat(pool.getUserPoolTags())
-                .containsEntry("env", "test")
-                .doesNotContainKey(ReservedTags.OVERRIDE_COGNITO_CLIENT_ID_KEY)
-                .doesNotContainKey(ReservedTags.OVERRIDE_COGNITO_CLIENT_SECRET_KEY);
+        assertEquals("test",pool.getUserPoolTags().get("env"));
+        assertFalse(pool.getUserPoolTags().containsKey(ReservedTags.OVERRIDE_COGNITO_CLIENT_ID_KEY));
+        assertFalse(pool.getUserPoolTags().containsKey(ReservedTags.OVERRIDE_COGNITO_CLIENT_SECRET_KEY));
 
         UserPoolClient client = service.createUserPoolClient(
                 pool.getId(),
@@ -1860,9 +1857,9 @@ class CognitoServiceTest {
                 List.of()
         );
 
-        assertThat(client.getClientName()).isEqualTo("basic-client");
-        assertThat(client.getClientId()).isEqualTo(expectedClientId);
-        assertThat(client.getClientSecret()).isEqualTo("secret");
+        assertEquals("basic-client", client.getClientName());
+        assertEquals(expectedClientId, client.getClientId());
+        assertEquals("secret", client.getClientSecret());
     }
 
     @ParameterizedTest
@@ -1880,11 +1877,12 @@ class CognitoServiceTest {
         createUserPool.put("PoolName", "InvalidOverridesPool");
         createUserPool.put("UserPoolTags", userPoolTags);
 
-        assertThatThrownBy(() -> service.createUserPool(
-                createUserPool,
-                "us-east-1"
-        )).isInstanceOf(AwsException.class)
-                .extracting("errorCode")
-                .isEqualTo("InvalidParameterException");
+        AwsException ex = assertThrows(AwsException.class, () ->
+                service.createUserPool(
+                        createUserPool,
+                        "us-east-1"
+                ));
+        assertEquals("InvalidParameterException", ex.getErrorCode());
+
     }
 }

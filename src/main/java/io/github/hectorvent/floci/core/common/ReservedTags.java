@@ -1,7 +1,7 @@
 package io.github.hectorvent.floci.core.common;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
-import org.apache.commons.lang3.function.TriConsumer;
+import org.apache.commons.lang3.function.TriFunction;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -15,13 +15,14 @@ public final class ReservedTags {
     public static final String OVERRIDE_COGNITO_CLIENT_SECRET_KEY = RESERVED_PREFIX + "override-cognito-client-secret";
     private static final String INVALID_PARAMETER_EXCEPTION = "InvalidParameterException";
     private static final String VALIDATION_EXCEPTION = "ValidationException";
+    private static final String TAG_EXCEPTION = "TagException";
     private static final String CONTROL_CHARACTER_ERROR_MESSAGE = "Override %s must not contain control characters.";
 
     private ReservedTags() {
     }
 
     public static String extractOverrideKeyId(Map<String, String> tags) {
-        return getOverride(tags, OVERRIDE_ID_KEY, ReservedTags::validateOverrideId, "Resource ID", VALIDATION_EXCEPTION);
+        return getOverride(tags, OVERRIDE_ID_KEY, ReservedTags::validateOverrideId, "Resource ID", TAG_EXCEPTION);
     }
 
     public static String extractOverrideUserPoolId(Map<String, String> tags) {
@@ -79,33 +80,34 @@ public final class ReservedTags {
         }
     }
 
-    private static String getOverride(Map<String, String> tags, String override, TriConsumer<String, String, String> validator, String name, String errorCode) {
+    private static String getOverride(Map<String, String> tags, String override, TriFunction<String, String, String, String> validator, String name, String errorCode) {
         if (tags == null) {
             return null;
         }
         if (tags.containsKey(override)) {
             String ov = tags.get(override);
-            validator.accept(ov,name, errorCode);
-            return ov;
+            return validator.apply(ov, name, errorCode);
         }
         return null;
     }
 
-    private static void validateOverrideId(String overrideId, String name, String invalidParameterException) {
-        String normalized = checkNullAndWhitespace(overrideId, name, invalidParameterException);
+    private static String validateOverrideId(String overrideId, String name, String errorCode) {
+        String normalized = checkNullAndWhitespace(overrideId, name, errorCode);
         if (normalized.indexOf('/') >= 0 || normalized.indexOf('?') >= 0 || normalized.indexOf('#') >= 0) {
-            throw new AwsException(invalidParameterException, "Override %s contains unsupported characters.".formatted(name), 400);
+            throw new AwsException(errorCode, "Override %s contains unsupported characters.".formatted(name), 400);
         }
         if (normalized.chars().anyMatch(Character::isISOControl)) {
-            throw new AwsException(invalidParameterException, CONTROL_CHARACTER_ERROR_MESSAGE.formatted(name), 400);
+            throw new AwsException(errorCode, CONTROL_CHARACTER_ERROR_MESSAGE.formatted(name), 400);
         }
+        return normalized;
     }
 
-    private static void validateClientSecret(String overrideSecret, String name, String errorCode) {
+    private static String validateClientSecret(String overrideSecret, String name, String errorCode) {
         String normalized = checkNullAndWhitespace(overrideSecret, name, errorCode);
         if (normalized.chars().anyMatch(Character::isISOControl)) {
             throw new AwsException(errorCode, CONTROL_CHARACTER_ERROR_MESSAGE.formatted(name), 400);
         }
+        return normalized;
     }
 
     private static String checkNullAndWhitespace(String overrideSecret, String name, String errorCode) {

@@ -16,7 +16,7 @@
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <quarkus.platform.version>3.36.0</quarkus.platform.version>
-        <apicurio.version>2.6.13.Final</apicurio.version>
+        <apicurio.version>2.6.9.Final</apicurio.version>
     </properties>
 
     <dependencyManagement>
@@ -244,13 +244,6 @@
             <groupId>org.neo4j.driver</groupId>
             <artifactId>neo4j-java-driver</artifactId>
             <version>5.28.5</version>
-            <scope>test</scope>
-        </dependency>
-        <!-- AssertJ for fluent assertions -->
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <version>3.27.7</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
